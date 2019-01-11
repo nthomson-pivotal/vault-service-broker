@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
@@ -178,4 +180,184 @@ func TestParseConfigFromEnv(t *testing.T) {
 	if config.VaultRenew != false {
 		t.Fatal("expected false but received true")
 	}
+}
+
+func TestParseConfigFromCredhub(t *testing.T) {
+	os.Clearenv()
+
+	ts := testCredhubServer()
+	defer ts.Close()
+
+	os.Setenv("CREDHUB_URL", ts.URL)
+
+	config, err := parseConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SecurityUserName != "securityUserName" {
+		t.Fatalf("expected %s but received %s", `"securityUserName"`, config.SecurityUserName)
+	}
+	if config.SecurityUserPassword != "securityUserPassword" {
+		t.Fatalf("expected %s but received %s", `"securityUserPassword"`, config.SecurityUserPassword)
+	}
+	if config.VaultToken != "vaultToken" {
+		t.Fatalf("expected %s but received %s", `"vaultToken"`, config.VaultToken)
+	}
+	if config.CredhubURL != ts.URL {
+		t.Fatalf("expected %s but received %s", ts.URL, config.CredhubURL)
+	}
+	if config.Port != ":8080" {
+		t.Fatalf("expected %s but received %s", `":8080"`, config.Port)
+	}
+	if config.ServiceID != "serviceID" {
+		t.Fatalf("expected %s but received %s", `"serviceID"`, config.ServiceID)
+	}
+	if config.VaultAddr != "https://vaultAddr/" {
+		t.Fatalf("expected %s but received %s", `"http:s//vaultAddr/"`, config.VaultAddr)
+	}
+	if config.VaultAdvertiseAddr != "https://vaultAdvertiseAddr/" {
+		t.Fatalf("expected %s but received %s", `"https://vaultAdvertiseAddr/"`, config.VaultAdvertiseAddr)
+	}
+	if config.ServiceName != "serviceName" {
+		t.Fatalf("expected %s but received %s", `"serviceName"`, config.ServiceName)
+	}
+	if config.ServiceDescription != "serviceDescription" {
+		t.Fatalf("expected %s but received %s", `"serviceDescription"`, config.ServiceDescription)
+	}
+	if config.PlanName != "planName" {
+		t.Fatalf("expected %s but received %s", `"planName"`, config.PlanName)
+	}
+	if config.PlanDescription != "planDescription" {
+		t.Fatalf("expected %s but received %s", `"planDescription"`, config.PlanDescription)
+	}
+	if len(config.ServiceTags) != 2 {
+		t.Fatalf("expected %d but received %d: %s", 2, len(config.ServiceTags), config.ServiceTags)
+	}
+	if config.VaultRenew != false {
+		t.Fatal("expected false but received true")
+	}
+}
+
+func TestCredhubConfigOverridesEnvConfig(t *testing.T) {
+	os.Clearenv()
+
+	os.Setenv("SECURITY_USER_NAME", "fizz")
+	os.Setenv("SECURITY_USER_PASSWORD", "buzz")
+	os.Setenv("VAULT_TOKEN", "bang")
+
+	os.Setenv("PORT", "8080")
+	os.Setenv("SERVICE_ID", "1234")
+	os.Setenv("VAULT_ADDR", "http://localhost:8200")
+	os.Setenv("VAULT_ADVERTISE_ADDR", "https://some-domain.com")
+	os.Setenv("SERVICE_NAME", "vault")
+	os.Setenv("SERVICE_DESCRIPTION", "Vault, by Hashicorp")
+	os.Setenv("PLAN_NAME", "free")
+	os.Setenv("PLAN_DESCRIPTION", "Can you believe it's opensource?")
+	os.Setenv("SERVICE_TAGS", "hello,world")
+	os.Setenv("VAULT_RENEW", "false")
+
+	ts := testCredhubServer()
+	defer ts.Close()
+
+	os.Setenv("CREDHUB_URL", ts.URL)
+
+	config, err := parseConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SecurityUserName != "securityUserName" {
+		t.Fatalf("expected %s but received %s", `"securityUserName"`, config.SecurityUserName)
+	}
+	if config.SecurityUserPassword != "securityUserPassword" {
+		t.Fatalf("expected %s but received %s", `"securityUserPassword"`, config.SecurityUserPassword)
+	}
+	if config.VaultToken != "vaultToken" {
+		t.Fatalf("expected %s but received %s", `"vaultToken"`, config.VaultToken)
+	}
+	if config.CredhubURL != ts.URL {
+		t.Fatalf("expected %s but received %s", ts.URL, config.CredhubURL)
+	}
+	if config.Port != ":8080" {
+		t.Fatalf("expected %s but received %s", `":8080"`, config.Port)
+	}
+	if config.ServiceID != "serviceID" {
+		t.Fatalf("expected %s but received %s", `"serviceID"`, config.ServiceID)
+	}
+	if config.VaultAddr != "https://vaultAddr/" {
+		t.Fatalf("expected %s but received %s", `"http:s//vaultAddr/"`, config.VaultAddr)
+	}
+	if config.VaultAdvertiseAddr != "https://vaultAdvertiseAddr/" {
+		t.Fatalf("expected %s but received %s", `"https://vaultAdvertiseAddr/"`, config.VaultAdvertiseAddr)
+	}
+	if config.ServiceName != "serviceName" {
+		t.Fatalf("expected %s but received %s", `"serviceName"`, config.ServiceName)
+	}
+	if config.ServiceDescription != "serviceDescription" {
+		t.Fatalf("expected %s but received %s", `"serviceDescription"`, config.ServiceDescription)
+	}
+	if config.PlanName != "planName" {
+		t.Fatalf("expected %s but received %s", `"planName"`, config.PlanName)
+	}
+	if config.PlanDescription != "planDescription" {
+		t.Fatalf("expected %s but received %s", `"planDescription"`, config.PlanDescription)
+	}
+	if len(config.ServiceTags) != 2 {
+		t.Fatalf("expected %d but received %d: %s", 2, len(config.ServiceTags), config.ServiceTags)
+	}
+	if config.VaultRenew != false {
+		t.Fatal("expected false but received true")
+	}
+}
+
+func testCredhubServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/data" {
+			writer.WriteHeader(400)
+			writer.Write([]byte(fmt.Sprintf("unrecognized path: %s", request.URL.Path)))
+			return
+		}
+		respVal := ""
+		switch request.URL.Query().Get("name") {
+		case "VAULT_SERVICE_BROKER_SECURITY_USER_NAME":
+			respVal = "securityUserName"
+		case "VAULT_SERVICE_BROKER_SECURITY_USER_PASSWORD":
+			respVal = "securityUserPassword"
+		case "VAULT_SERVICE_BROKER_VAULT_TOKEN":
+			respVal = "vaultToken"
+		case "VAULT_SERVICE_BROKER_PORT":
+			respVal = "8080"
+		case "VAULT_SERVICE_BROKER_SERVICE_ID":
+			respVal = "serviceID"
+		case "VAULT_SERVICE_BROKER_VAULT_ADDR":
+			respVal = "vaultAddr"
+		case "VAULT_SERVICE_BROKER_VAULT_ADVERTISE_ADDR":
+			respVal = "vaultAdvertiseAddr"
+		case "VAULT_SERVICE_BROKER_SERVICE_NAME":
+			respVal = "serviceName"
+		case "VAULT_SERVICE_BROKER_SERVICE_DESCRIPTION":
+			respVal = "serviceDescription"
+		case "VAULT_SERVICE_BROKER_PLAN_NAME":
+			respVal = "planName"
+		case "VAULT_SERVICE_BROKER_PLAN_DESCRIPTION":
+			respVal = "planDescription"
+		case "VAULT_SERVICE_BROKER_SERVICE_TAGS":
+			respVal = "service,tags"
+		case "VAULT_SERVICE_BROKER_VAULT_RENEW":
+			respVal = "false"
+		default:
+			writer.WriteHeader(400)
+		}
+		respBody := fmt.Sprintf(`{
+			"data": [{
+				"type": "password",
+				"version_created_at": "2017-01-05T01:01:01Z",
+				"id": "2993f622-cb1e-4e00-a267-4b23c273bf3d",
+				"name": "/example-password",
+				"value": "%s"
+			}]
+		}`, respVal)
+
+		writer.WriteHeader(200)
+		writer.Write([]byte(respBody))
+	}))
 }
