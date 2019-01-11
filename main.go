@@ -2,15 +2,20 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"code.cloudfoundry.org/lager"
+	"github.com/cloudfoundry-community/go-credhub"
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/vault/api"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/pivotal-cf/brokerapi"
@@ -27,10 +32,15 @@ func main() {
 	}
 
 	// Setup the vault client
-	client, err := api.NewClient(nil)
+	vaultClientConfig := api.DefaultConfig()
+	vaultClientConfig.HttpClient = cleanhttp.DefaultClient()
+
+	client, err := api.NewClient(vaultClientConfig)
 	if err != nil {
 		logger.Fatal("[ERR] failed to create api client", err)
 	}
+	client.SetAddress(config.VaultAddr)
+	client.SetToken(config.VaultToken)
 
 	// Setup the broker
 	broker := &Broker{
@@ -135,6 +145,11 @@ func parseConfig() (*Configuration, error) {
 	if err := envconfig.Process("", config); err != nil {
 		return nil, err
 	}
+	if config.CredhubURL != "" {
+		if err := credhubProcess("VAULT_SERVICE_BROKER_", config); err != nil {
+			return nil, err
+		}
+	}
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -182,5 +197,58 @@ func (c *Configuration) Validate() error {
 	}
 	c.VaultAddr = normalizeAddr(c.VaultAddr)
 	c.VaultAdvertiseAddr = normalizeAddr(c.VaultAdvertiseAddr)
+	return nil
+}
+
+// credhubProcess iterates over the names of variables as set in the `envconfig` tag
+// on the Configuration. It prepends them with VAULT_SERVICE_BROKER_ and then looks
+// in Credhub to see if they exist. If they do and they have a value, the Configuration
+// is updated with that value for that field. 
+func credhubProcess(prefix string, config *Configuration) error {
+
+	client := credhub.New(config.CredhubURL, cleanhttp.DefaultClient())
+
+	// Pull the "envconfig" field name from each field and look for it in Credhub
+	configTypeInfo := reflect.TypeOf(*config)
+	settableConfig := reflect.ValueOf(config).Elem()
+
+	for i := 0; i < configTypeInfo.NumField(); i++ {
+		fieldTypeInfo := configTypeInfo.Field(i)
+		credhubName := prefix + strings.ToUpper(fieldTypeInfo.Tag.Get("envconfig"))
+
+		latest, err := client.GetLatestByName(credhubName)
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return err
+		}
+		if latest == nil {
+			// This key doesn't exist in Credhub
+			continue
+		}
+		settingValue, ok := latest.Value.(string)
+		if !ok {
+			return fmt.Errorf("we only support credhub values as bash-like string values, but received %s as a %s", credhubName, reflect.TypeOf(latest.Value))
+		}
+		if settingValue == "" {
+			// The value for this key isn't set in Credhub
+			continue
+		}
+
+		// Update the value for this field with Credhub's value
+		settableField := settableConfig.Field(i)
+		switch fieldTypeInfo.Type.Kind() {
+		case reflect.Bool:
+			asBool, err := strconv.ParseBool(settingValue)
+			if err != nil {
+				return fmt.Errorf("error parsing bool %s: %s", credhubName, err)
+			}
+			settableField.SetBool(asBool)
+		case reflect.String:
+			settableField.SetString(settingValue)
+		case reflect.Slice:
+			settableField.Set(reflect.ValueOf(strings.Split(settingValue, ",")))
+		default:
+			return fmt.Errorf("unsupported type of %s for %s", fieldTypeInfo.Type.Kind(), credhubName)
+		}
+	}
 	return nil
 }
