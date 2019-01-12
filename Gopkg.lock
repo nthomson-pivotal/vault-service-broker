@@ -10,12 +10,36 @@
   revision = "438ab98cc3b9b81e97c2281422b2722cd8e80ed8"
 
 [[projects]]
+  digest = "1:b856d8248663c39265a764561c1a1a149783f6cc815feb54a1f3a591b91f6eca"
+  name = "github.com/Masterminds/semver"
+  packages = ["."]
+  pruneopts = ""
+  revision = "c7af12943936e8c39859482e61f0574c2fd7fc75"
+  version = "v1.4.2"
+
+[[projects]]
+  branch = "master"
+  digest = "1:59a51fd12ccc3ead88d555358f99b1d11bdf246cdd2711b06fc3fe0124165ab0"
+  name = "github.com/cloudfoundry-community/go-cfclient"
+  packages = ["."]
+  pruneopts = ""
+  revision = "2cfd01d21c0b3065f89a8486a365c83677e4a3a6"
+
+[[projects]]
   digest = "1:ae8a9c7cb45b6715112d1f8679ce1ca740571866784660278dafd8bf91d4b4f4"
   name = "github.com/cloudfoundry-community/go-credhub"
   packages = ["."]
   pruneopts = ""
   revision = "e372d078026090c62bf1289cb73e55a1ec4043a0"
   version = "v0.9.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:458a7743018a51b622fac1a2c19f351673966b1a227586bc820d7c01a2c24f27"
+  name = "github.com/cloudfoundry/gofileutils"
+  packages = ["fileutils"]
+  pruneopts = ""
+  revision = "4d0c80011a0f37da1711c184028bc40137cd45af"
 
 [[projects]]
   digest = "1:55848e643a99a9dfceb19e090ce67111328fbb1780f34c62a0430994ff85fb90"
@@ -192,6 +216,7 @@
   name = "golang.org/x/oauth2"
   packages = [
     ".",
+    "clientcredentials",
     "internal",
   ]
   pruneopts = ""
@@ -231,11 +256,20 @@
   revision = "e9657d882bb81064595ca3b56cbe2546bbabf7b1"
   version = "v1.4.0"
 
+[[projects]]
+  branch = "v2"
+  digest = "1:cedccf16b71e86db87a24f8d4c70b0a855872eb967cb906a66b95de56aefbd0d"
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  pruneopts = ""
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
     "code.cloudfoundry.org/lager",
+    "github.com/cloudfoundry-community/go-cfclient",
     "github.com/cloudfoundry-community/go-credhub",
     "github.com/hashicorp/go-cleanhttp",
     "github.com/hashicorp/vault/api",
