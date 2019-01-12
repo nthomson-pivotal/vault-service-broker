@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"code.cloudfoundry.org/lager"
+	"github.com/cloudfoundry-community/go-cfclient"
 	"github.com/cloudfoundry-community/go-credhub"
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/vault/api"
@@ -42,10 +43,17 @@ func main() {
 	vaultClient.SetAddress(config.VaultAddr)
 	vaultClient.SetToken(config.VaultToken)
 
+	// TODO authentication? Should be set to nil if not authenticated/usable.
+	pcfClient, err := cfclient.NewClient(cfclient.DefaultConfig())
+	if err != nil {
+		logger.Fatal("[ERR] failed to create pcf api client", err)
+	}
+
 	// Setup the broker
 	broker := &Broker{
 		log:         logger,
 		vaultClient: vaultClient,
+		pcfClient:   pcfClient,
 
 		serviceID:          config.ServiceID,
 		serviceName:        config.ServiceName,
@@ -203,7 +211,7 @@ func (c *Configuration) Validate() error {
 // credhubProcess iterates over the names of variables as set in the `envconfig` tag
 // on the Configuration. It prepends them with VAULT_SERVICE_BROKER_ and then looks
 // in Credhub to see if they exist. If they do and they have a value, the Configuration
-// is updated with that value for that field. 
+// is updated with that value for that field.
 func credhubProcess(prefix string, config *Configuration) error {
 
 	client := credhub.New(config.CredhubURL, cleanhttp.DefaultClient())

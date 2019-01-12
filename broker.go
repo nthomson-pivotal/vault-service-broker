@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cloudfoundry-community/go-cfclient"
 	"log"
 	"math/rand"
 	"sort"
@@ -35,14 +36,18 @@ type bindingInfo struct {
 }
 
 type instanceInfo struct {
+	OrganizationName    string
 	OrganizationGUID    string
+	SpaceName           string
 	SpaceGUID           string
+	ServiceInstanceName string
 	ServiceInstanceGUID string
 }
 
 type Broker struct {
 	log         *log.Logger
 	vaultClient *api.Client
+	pcfClient   *cfclient.Client
 
 	// service-specific customization
 	serviceID          string
@@ -310,6 +315,25 @@ func (b *Broker) Provision(ctx context.Context, instanceID string, details broke
 		SpaceGUID:           details.SpaceGUID,
 		ServiceInstanceGUID: instanceID,
 	}
+	if b.pcfClient != nil {
+		organization, err := b.pcfClient.GetOrgByGuid(info.OrganizationGUID)
+		if err != nil {
+			return spec, err
+		}
+		info.OrganizationName = organization.Name
+
+		space, err := b.pcfClient.GetSpaceByGuid(info.SpaceGUID)
+		if err != nil {
+			return spec, err
+		}
+		info.SpaceName = space.Name
+
+		serviceInstance, err := b.pcfClient.GetServiceInstanceByGuid(info.ServiceInstanceGUID)
+		if err != nil {
+			return spec, err
+		}
+		info.ServiceInstanceName = serviceInstance.Name
+	}
 
 	b.log.Printf("[DEBUG] generating policy for %s", info.ServiceInstanceGUID)
 	if err := GeneratePolicy(&buf, info); err != nil {
@@ -341,6 +365,16 @@ func (b *Broker) Provision(ctx context.Context, instanceID string, details broke
 		"/cf/" + info.SpaceGUID + "/secret":            "generic",
 		"/cf/" + info.ServiceInstanceGUID + "/secret":  "generic",
 		"/cf/" + info.ServiceInstanceGUID + "/transit": "transit",
+	}
+	if info.OrganizationName != "" {
+		mounts["/cf/"+info.OrganizationName+"-"+info.OrganizationGUID+"/secret"] = "generic"
+	}
+	if info.SpaceName != "" {
+		mounts["/cf/"+info.SpaceName+"-"+info.SpaceGUID+"/secret"] = "generic"
+	}
+	if info.ServiceInstanceName != "" {
+		mounts["/cf/"+info.ServiceInstanceName+"-"+info.ServiceInstanceGUID+"/secret"] = "generic"
+		mounts["/cf/"+info.ServiceInstanceName+"-"+info.ServiceInstanceGUID+"/transit"] = "transit"
 	}
 
 	// Mount the backends
@@ -395,6 +429,13 @@ func (b *Broker) Deprovision(ctx context.Context, instanceID string, details bro
 		"/cf/" + info.ServiceInstanceGUID + "/secret",
 		"/cf/" + info.ServiceInstanceGUID + "/transit",
 	}
+	if info.ServiceInstanceName != "" {
+		mounts = append(mounts, []string{
+			"/cf/" + info.ServiceInstanceName + "-" + info.ServiceInstanceGUID + "/secret",
+			"/cf/" + info.ServiceInstanceName + "-" + info.ServiceInstanceGUID + "/transit",
+		}...)
+	}
+
 	b.log.Printf("[DEBUG] removing mounts %s", strings.Join(mounts, ", "))
 	if err := b.idempotentUnmount(mounts); err != nil {
 		return spec, b.wErrorf(err, "failed to remove mounts")
